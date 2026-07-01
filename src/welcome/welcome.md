@@ -86,31 +86,216 @@ val yodasAge = HumanAge(800)
 ```
 In the above, we have determined that `yoda` is not human since his age if far greater than a human is able to live.
 
-At Typelevel, we can even get more clever, we have a project called [Refined](https://github.com/fthomas/refined) which can create types that constrain with clearer meaning.
-
-```scala
-import eu.timepit.refined.api.Refined
-import eu.timepit.refined.numeric.Interval.Closed
-import eu.timepit.refined.auto.*
-
-type HumanAge = Int Refined Closed[0, 120]
-val age: HumanAge = 42
-```
-
-Notice now we have a simple declaration, that a `HumanAge` can only be represented by a valid number, and we can also use that number. 
-
 Richer types reduce the number of mistakes a program can make. Instead of relying on documentation, comments, or runtime checks, the compiler helps ensure that values satisfy their constraints before the program ever runs. This philosophy of using types to model the problem domain as accurately as possible is one of the defining characteristics of the Typelevel ecosystem.
 
 ### Transforming Data
 
 #### `map`
+
+We have many containers in Scala and in Typelevel, each of those containers we can apply a function that manipulates the value or values in that container and get another container. That method is called `map` and `map` applies a function to all values or value in the container. Let's take a `List`
+
+```scala
+scala> val result = List(1,2,3,4).map(x => x * 3) 
+val result: List[Int] = List(3, 6, 9, 12)
+```
+
+Another container is `Option` is we apply a `map` we can change the value
+
+```scala
+scala> val result = Option(2).map(x => x * 3)
+val result: Option[Int] = Some(6)
+```
+
+Here we see an `Option` with `6`, but wait, what is `Some`? `Some` is one of the children of `Option`, along with its sibling `None`. There are many types in Scala and in the Typelevel stack that are structured this way where the parent and its children are defined as a unit, and there a no classes that extend the family. They are called `sealed` types or, if we get nerdy for a bit, an _algebraic data type_. Think of it as a closed family, here is how it is defined. I took the liberty to simplify what it looks like.
+
+```scala
+sealed abstract class Option[+A] {}
+final case class Some[+A](value: A) extends Option[A] {}
+case object None extends Option[Nothing] {}
+```
+
 #### `filter`
+
+Filter can be used to "filter out values" that meet a predicate, which is a function that only returns `true` or `false
+
+```scala
+scala> val result = List(1,2,3,4,5).filter(x => x % 2 == 0)
+val result: List[Int] = List(2, 4)
+```
+
+It becomes interesting when we apply it to an `Option`. If the predicate resolves to `true`, then the value is maintained. 
+
+```scala
+scala> val result = Option(4).filter(x => x % 2 == 0)
+val result: Option[Int] = Some(4)
+```
+
+If it is false, the `Option` becomes `None`
+
+```scala
+scala> val result = Option(3).filter(x => x % 2 == 0)
+val result: Option[Int] = None
+```
+
 #### `flatMap`
+
+`flatMap` becomes an essential function in everything we do at Scala and at Typelevel. `flatMap` does many wonderful things, one is that it explodes values. In the following example notice that for every value it creates a new collection, the signature for `flatMap` for a `List` is `flatMap(A => List[A])` meaning that every item must reproduce many items; after it creates multiples, it must flatten them.
+
+```scala
+scala> val mapped = List(1,2,3).map(x => List(-x, x, x+1))
+val mapped: List[List[Int]] = List(List(-1, 1, 2), List(-2, 2, 3), List(-3, 3, 4))
+```
+
+If we flatten a `List` of a `List`, we will get a list with all the values being on one single list
+
+```scala
+val result = mapped.flatten
+val result: List[Int] = List(-1, 1, 2, -2, 2, 3, -3, 3, 4)
+```
+
+Combining the `map` and `flatten` gives us `flatMap` so we don't have to do two separate steps, `map` and `flatten`
+
+```scala
+val result = List(1,2,3).flatMap(x => List(-x, x, x+1))
+val result: List[Int] = List(-1, 1, 2, -2, 2, 3, -3, 3, 4)
+```
+
+Another fascinating characteristic is that it composes our containers if one container has a value and another container has a value, and we would like to interweave the values it contains together without taking them out of the container. 
+
+For this example, we will use an `Option`
+
+```scala
+scala> val o1 = Option(3)
+val o1: Option[Int] = Some(3)
+
+scala> val o2 = Option(2)
+val o2: Option[Int] = Some(2)
+
+scala> o1.flatMap(x => o2.map(y => x + y))
+val res0: Option[Int] = Some(5)
+```
+
+Stare at the last statement a bit, I only included two `Option`s here, `o1`, and `o2` but notice we did not call `get` to remove the number and then take those numbers and put them in another container. I used a combination of `flatMap` and `map` to bring the contents of the containers together without too much work.
+
+What would it look like if we chain another `Option`? Then this would need another `flatMap` to make it `flatMap`, `flatMap`, `map`
+
+```scala
+scala> val o1 = Option(3)
+val o1: Option[Int] = Some(3)
+
+scala> val o2 = Option(2)
+val o2: Option[Int] = Some(2)
+
+scala> val o3 = Option(1)
+val o3: Option[Int] = Some(1)
+
+scala> o1.flatMap(x => o2.flatMap(y => o3.map(z => x + y + z)))
+val res2: Option[Int] = Some(6)
+```
+
+If we need four `Option`s to chain, then of course, we would need `flatMap`, `flatMap`, `flatMap`, `map`
+
+```scala
+scala> val o1 = Option(3)
+val o1: Option[Int] = Some(3)
+
+scala> val o2 = Option(2)
+val o2: Option[Int] = Some(2)
+
+scala> val o3 = Option(1)
+val o3: Option[Int] = Some(1)
+
+scala> val o4 = Option(4)
+val o4: Option[Int] = Some(4)
+
+scala> val result = o1.flatMap(x => o2.flatMap(y => o3.flatMap(z => o4.map(w => x + y + z + w))))
+val result: Option[Int] = Some(10)
+```
+
+We can go on to infinite `flatMap`s with one `map` at the end
+
 ##### In Channel Errors
+
+We know that there are two types or two children to an `Option`, we saw the `sealed` type earlier, `Some` and `None`. That means that `Option` has a built-in error type, `None`. Here is one of the best parts of using `flatMap`, if any of the elements in the chain is the "error" and in our case for `Option`, a `None`, then the whole thing will be a `None`. This is an "in-channel" error
+
+```scala
+scala> val o1 = Option(3)
+val o1: Option[Int] = Some(3)
+
+scala> val o2 = Option(2)
+val o2: Option[Int] = Some(2)
+
+scala> val o3 = Option.empty[Int]
+val o3: Option[Int] = None
+
+scala> val o4 = Option(4)
+val o4: Option[Int] = Some(4)
+
+scala> val result =  o1.flatMap(x => o2.flatMap(y => o3.flatMap(z => o4.map(w => x + y + z + w))))
+val result: Option[Int] = None
+```
+
 #### for-comprehensions
 
-### Referential Transparency
+Instead of writing obsessive a bunch of `flatMap`s with a `map` at the end we can use a for-comprehension. A for-comprehension is just a pretty way to do a bunch of `flatMap`s with a map. Let's start with the `Option` where there is no error.
 
+```scala
+
+scala> val o1 = Option(3)
+val o1: Option[Int] = Some(3)
+
+scala> val o2 = Option(2)
+val o2: Option[Int] = Some(2)
+
+scala> val o3 = Option(1)
+val o3: Option[Int] = Some(1)
+
+scala> val o4 = Option(4)
+val o4: Option[Int] = Some(4)
+
+scala> val result = for {
+     |    x <- o1
+     |    y <- o2
+     |    z <- o3
+     |    w <- o4 } yield (x + y + z + w)
+val result: Option[Int] = Some(10)
+```
+
+What we see above are three `flatMap`s and a `map`, we just don't see it. In order for this to work, all the elements on the right `o1`, `o2`, `o3`, `o4` need to all be the same type, in our case `Option[Int]`. If you need to do some work, and you are in the middle of a for-comprehension, fear not; you can do a statement in the middle of the for-comprehension.
+
+```scala
+scala> def o1():Option[Int] = Option(3)
+
+scala> def o2():Option[Int] = Option(2)
+
+scala> def o3():Option[Int] = //mystery option
+  
+scala> val result = for {
+     |    x <- o1()
+     |    y <- o2()
+     |    z <- o3()
+     |    v = if(z > 5) 10 else 0
+     |    w <- Option(v)
+     | } yield (x + y + z + w)
+val result: Option[Int] = Some(8)
+```
+
+In the above, we can see that we took a pit stop to make a decision based on `z` which came from `o3`. Remember when you use the arrow (`<-`) the right hand side of the arrow _must be the same exact type_ as all the other types in that same for-comprehension.
+
+TODO: Clean up the above
+TODO: Include a filter
+TODO: Review the pit-stop for-comprehension, maybe there is a better example
+TODO: Run through grammarly
+
+#### Method Design
+
+TODO: Return a `Future`
+
+#### a real world example
+
+TODO: I really want to do `Applicative`
+
+### Referential Transparency
     * What it means
     * Examples of referentially transparent code
     * Examples of code that is not referentially transparent
@@ -145,3 +330,4 @@ Richer types reduce the number of mistakes a program can make. Instead of relyin
    * HTTP4s
    * Other ecosystem libraries
    * How the projects build upon one another
+10. Exercises?
